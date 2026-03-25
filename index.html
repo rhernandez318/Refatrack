@@ -196,10 +196,11 @@ td.c-michel{color:var(--michel)}td.c-otero{color:var(--otero)}
 
 <!-- ══ RESUMEN ══ -->
 <div id="panel-resumen" class="panel">
-  <div class="kpi-row">
+  <div class="kpi-row-5">
     <div class="kpi" style="--kpi-accent:var(--accent)"><div class="kpi-label">Ventas Totales</div><div class="kpi-value" id="kpi-ventas">—</div><div class="kpi-sub" id="kpi-ventas-sub">Sin datos</div></div>
     <div class="kpi" style="--kpi-accent:var(--orange)"><div class="kpi-label">Presupuesto Total</div><div class="kpi-value" id="kpi-pres">—</div><div class="kpi-sub" id="kpi-pres-sub"></div></div>
     <div class="kpi" style="--kpi-accent:var(--green)"><div class="kpi-label">% Cumplimiento Global</div><div class="kpi-value" id="kpi-cumpl">—</div><div class="kpi-sub">Ventas / Presupuesto</div></div>
+    <div class="kpi" style="--kpi-accent:var(--yellow)"><div class="kpi-label">% Margen Promedio</div><div class="kpi-value" id="kpi-margen">—</div><div class="kpi-sub">Margen / Ventas</div></div>
     <div class="kpi" style="--kpi-accent:var(--michel)"><div class="kpi-label">Vendedores Activos</div><div class="kpi-value" id="kpi-vend">—</div><div class="kpi-sub" id="kpi-vend-sub"></div></div>
   </div>
   <div class="ctrl-row">
@@ -326,7 +327,7 @@ td.c-michel{color:var(--michel)}td.c-otero{color:var(--otero)}
   </div>
   <div class="charts-grid">
     <div class="chart-card" style="grid-column:1/-1"><div class="chart-title" id="graf-title">Gráfica Principal</div><div class="chart-wrap" style="min-height:320px"><canvas id="chart-main"></canvas></div></div>
-    <div class="chart-card"><div class="chart-title">Ventas por Centro</div><div class="chart-wrap"><canvas id="chart-centro"></canvas></div></div>
+    <div class="chart-card"><div class="chart-title">% Cumplimiento por Centro</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;flex:1;min-height:200px"><div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="font-family:var(--mono);font-size:10px;color:var(--michel);text-transform:uppercase;letter-spacing:.08em;padding-top:4px">MICHEL</div><div style="position:relative;flex:1;width:100%;min-height:150px"><canvas id="chart-centro-michel"></canvas><div id="lbl-michel" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:var(--head);font-size:22px;font-weight:800;pointer-events:none">—</div></div></div><div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="font-family:var(--mono);font-size:10px;color:var(--otero);text-transform:uppercase;letter-spacing:.08em;padding-top:4px">OTERO</div><div style="position:relative;flex:1;width:100%;min-height:150px"><canvas id="chart-centro-otero"></canvas><div id="lbl-otero" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:var(--head);font-size:22px;font-weight:800;pointer-events:none">—</div></div></div></div></div>
     <div class="chart-card"><div class="chart-title">Top 10 Vendedores</div><div class="chart-wrap"><canvas id="chart-top"></canvas></div></div>
   </div>
 </div>
@@ -589,23 +590,32 @@ function renderPres(){
 /* ── KPIs ── */
 function updateKPIs(){
   if(!RAW.length)return;
-  const av=activeVendors();
-  const totalV=RAW.filter(r=>av.find(v=>v.name===r.vendedor)).reduce((s,r)=>s+r.ventas,0);
-  const totalP=av.reduce((s,v)=>s+Object.values(BUDGET[v.name]||{}).reduce((a,b)=>a+b,0),0);
+  const centro=document.getElementById('res-centro')?document.getElementById('res-centro').value:'';
+  const year=document.getElementById('res-year')?document.getElementById('res-year').value:'';
+  const av=activeVendors().filter(v=>!centro||v.centro===centro);
+  const rawFilt=RAW.filter(r=>av.find(v=>v.name===r.vendedor)&&(!year||r.año===parseInt(year)));
+  const totalV=rawFilt.reduce((s,r)=>s+r.ventas,0);
+  const totalM=rawFilt.reduce((s,r)=>s+r.margen,0);
+  const totalP=av.reduce((s,v)=>s+PERIODS.filter(p=>!year||p.año===parseInt(year)).reduce((a,p)=>a+bFor(v.name,p.label),0),0);
   const cumpl=totalP?totalV/totalP:null;
+  const mgnPct=totalV?totalM/totalV:null;
   document.getElementById('kpi-ventas').textContent=fmt(totalV/1e6,2).replace('MXN','')+'M';
   document.getElementById('kpi-ventas-sub').textContent=fmt(totalV);
   document.getElementById('kpi-pres').textContent=totalP?fmt(totalP/1e6,2).replace('MXN','')+'M':'Sin captura';
   document.getElementById('kpi-cumpl').textContent=cumpl!=null?pct(cumpl):'—';
   document.getElementById('kpi-cumpl').style.color=cumpl==null?'var(--text)':cumpl>=1?'var(--green)':cumpl>=.8?'var(--yellow)':'var(--red)';
+  document.getElementById('kpi-margen').textContent=mgnPct!=null?pct(mgnPct):'—';
+  document.getElementById('kpi-margen').style.color=mgnPct==null?'var(--text)':mgnPct>=.2?'var(--green)':mgnPct>=.1?'var(--yellow)':'var(--red)';
   document.getElementById('kpi-vend').textContent=av.length;
-  document.getElementById('kpi-vend-sub').textContent=`${av.filter(v=>v.centro==='MICHEL').length} MICHEL · ${av.filter(v=>v.centro==='OTERO').length} OTERO`;
+  const sub=centro?`${av.length} en ${centro}`:`${av.filter(v=>v.centro==='MICHEL').length} MICHEL · ${av.filter(v=>v.centro==='OTERO').length} OTERO`;
+  document.getElementById('kpi-vend-sub').textContent=sub;
 }
 
 /* ── RESUMEN TABLE ── */
 function toggleSort(col){sortState.dir=sortState.col===col?(sortState.dir==='asc'?'desc':'asc'):'desc';sortState.col=col;renderResumen()}
 function renderResumen(){
   if(!RAW.length)return;
+  updateKPIs();
   const search=document.getElementById('res-search').value.toLowerCase();
   const centro=document.getElementById('res-centro').value;
   const year=document.getElementById('res-year').value;
@@ -839,13 +849,45 @@ function renderGraf(){
     charts['main']=new Chart(ctxM,{type:'line',data:{labels:periods.map(p=>p.label),datasets:ds},options:{...cOpts(),plugins:{...cOpts().plugins,tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${fmt(ctx.raw)}`}}}}});
   }
 
-  dChart('centro');
-  const cd=['MICHEL','OTERO'].map(c=>({c,ve:RAW.filter(r=>r.centro===c&&(!year||r.año===parseInt(year))&&av.find(v=>v.name===r.vendedor)).reduce((s,r)=>s+r.ventas,0)}));
-  charts['centro']=new Chart(document.getElementById('chart-centro').getContext('2d'),{type:'doughnut',data:{labels:cd.map(d=>d.c),datasets:[{data:cd.map(d=>d.ve),backgroundColor:['rgba(123,143,255,.7)','rgba(255,140,66,.7)'],borderColor:['var(--michel)','var(--otero)'],borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#9BA3C0',font:{family:'DM Mono',size:11}}},tooltip:{callbacks:{label:ctx=>` ${ctx.label}: ${fmt(ctx.raw)}`}}}}});
+  // ── FULFILLMENT DONUT per centro ──
+  dChart('centro-michel');dChart('centro-otero');
+  ['MICHEL','OTERO'].forEach(c=>{
+    const cAv=activeVendors().filter(v=>v.centro===c);
+    const cPres=cAv.reduce((s,v)=>s+bTotalFor(v.name,year),0);
+    const cVent=RAW.filter(r=>r.centro===c&&(!year||r.año===parseInt(year))&&cAv.find(v=>v.name===r.vendedor)).reduce((s,r)=>s+r.ventas,0);
+    const ratio=cPres?Math.min(cVent/cPres,1):null;
+    const canvasId=`chart-centro-${c.toLowerCase()}`;
+    const lblId=`lbl-${c.toLowerCase()}`;
+    const lblEl=document.getElementById(lblId);
+    if(ratio!=null){
+      const pctVal=ratio*100;
+      const clr=ratio>=1?'#56C288':ratio>=.8?'#F5C842':'#FF5A5A';
+      if(lblEl){lblEl.textContent=pct(ratio,0);lblEl.style.color=clr}
+      charts[`centro-${c.toLowerCase()}`]=new Chart(document.getElementById(canvasId).getContext('2d'),{
+        type:'doughnut',
+        data:{datasets:[{data:[pctVal,Math.max(0,100-pctVal)],backgroundColor:[clr,'rgba(42,48,80,.6)'],borderWidth:0,circumference:360,rotation:0}]},
+        options:{responsive:true,maintainAspectRatio:false,cutout:'72%',
+          plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.dataIndex===0?` Cumplido: ${pct(ratio,1)}`:[` Pendiente: ${pct(1-ratio,1)}`]}}}}
+      });
+    }else{
+      if(lblEl){lblEl.textContent='S/P';lblEl.style.color='var(--text3)'}
+    }
+  });
 
+  // ── TOP 10 ──
   dChart('top');
-  const top=av.map(v=>({name:v.name.slice(0,20),ve:vTotalFor(v.name,year),centro:v.centro})).sort((a,b)=>b.ve-a.ve).slice(0,10);
-  charts['top']=new Chart(document.getElementById('chart-top').getContext('2d'),{type:'bar',indexAxis:'y',data:{labels:top.map(v=>v.name),datasets:[{label:'Ventas',data:top.map(v=>v.ve),backgroundColor:top.map(v=>v.centro==='MICHEL'?'rgba(123,143,255,.6)':'rgba(255,140,66,.6)'),borderColor:top.map(v=>v.centro==='MICHEL'?'var(--michel)':'var(--otero)'),borderWidth:1,borderRadius:3}]},options:{...cOpts(),plugins:{...cOpts().plugins,tooltip:{callbacks:{label:ctx=>` ${fmt(ctx.raw)}`}}},scales:{x:{...cOpts().scales.x,ticks:{callback:v=>'$'+v/1e6+'M',color:'#60697D',font:{family:'DM Mono',size:10}}},y:cOpts().scales.y}}});
+  const top=av.map(v=>({name:v.name.length>22?v.name.slice(0,21)+'…':v.name,ve:vTotalFor(v.name,year),centro:v.centro})).sort((a,b)=>b.ve-a.ve).slice(0,10);
+  charts['top']=new Chart(document.getElementById('chart-top').getContext('2d'),{type:'bar',indexAxis:'y',
+    data:{labels:top.map(v=>v.name),datasets:[{label:'Ventas',data:top.map(v=>v.ve),
+      backgroundColor:top.map(v=>v.centro==='MICHEL'?'rgba(123,143,255,.6)':'rgba(255,140,66,.6)'),
+      borderColor:top.map(v=>v.centro==='MICHEL'?'var(--michel)':'var(--otero)'),borderWidth:1,borderRadius:3}]},
+    options:{...cOpts(),plugins:{...cOpts().plugins,tooltip:{callbacks:{label:ctx=>` ${fmt(ctx.raw)}`}}},
+      scales:{
+        x:{...cOpts().scales.x,ticks:{callback:v=>'$'+(v/1e6).toFixed(1)+'M',color:'#60697D',font:{family:'DM Mono',size:10}}},
+        y:{...cOpts().scales.y,ticks:{color:'#9BA3C0',font:{family:'DM Sans',size:11},autoSkip:false},afterFit(axis){axis.width=180}}
+      }
+    }
+  });
 }
 
 /* ── HELPERS ── */
