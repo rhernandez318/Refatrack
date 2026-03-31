@@ -663,6 +663,15 @@ async function loadAllFromDB() {
       BUDGET[r.vendedor][r.periodo] = parseFloat(r.monto) || 0;
     });
 
+    setLoadMsg('Cargando clientes…');
+    const snap4 = await DB.collection('rf_clientes').get();
+    RAW_CLI = snap4.docs.map(d => {
+      const r = d.data();
+      return { mes: r.mes, año: r.año, centro: r.centro,
+               vendedor: r.vendedor, cliente: r.cliente,
+               ventas: parseFloat(r.ventas)||0, margen: parseFloat(r.margen)||0 };
+    });
+
     setSyncBadge('on', 'Firebase');
     return true;
   } catch(e) {
@@ -700,6 +709,24 @@ async function dbUpsertVentas(records, archivo) {
     setSyncBadge('on', 'Firebase');
     updateCfgCounts();
   } catch(e) { setSyncBadge('err', 'Error sync'); console.error('dbUpsertVentas:', e); }
+}
+
+async function dbUpsertClientes(records, archivo) {
+  if (!DB || !records.length) return;
+  try {
+    const chunkSize = 400;
+    for (let i = 0; i < records.length; i += chunkSize) {
+      const batch = DB.batch();
+      records.slice(i, i + chunkSize).forEach(r => {
+        const id  = fsId(r.mes, r.año, r.centro, r.vendedor, r.cliente);
+        const ref = DB.collection('rf_clientes').doc(id);
+        batch.set(ref, { mes: r.mes, año: r.año, centro: r.centro,
+          vendedor: r.vendedor, cliente: r.cliente,
+          ventas: r.ventas, margen: r.margen, archivo });
+      });
+      await batch.commit();
+    }
+  } catch(e) { console.error('dbUpsertClientes:', e); }
 }
 
 async function dbSyncVendor(name) {
@@ -906,8 +933,12 @@ async function parseData(rows,fileName,rowsCli=[]){
 
   // Save to Firebase (fire and continue)
   if(DB){
-    setLoadMsg('Guardando en Firebase…');
+    setLoadMsg('Guardando ventas en Firebase…');
     await dbUpsertVentas(RAW, fileName.split('/').pop());
+    if(RAW_CLI.length){
+      setLoadMsg('Guardando clientes en Firebase…');
+      await dbUpsertClientes(RAW_CLI, fileName.split('/').pop());
+    }
   }
 
   rebuildFromRAW();
